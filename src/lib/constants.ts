@@ -1,4 +1,4 @@
-import type { Priority, Role, TaskStatus } from './types';
+import type { Priority, RequestItem, Role, TaskStatus } from './types';
 
 export const STATUS_ORDER: TaskStatus[] = ['todo', 'in_progress', 'review', 'done'];
 
@@ -47,6 +47,18 @@ export const PRIORITY_META: Record<
 };
 
 export const PRIORITY_ORDER: Priority[] = ['urgent', 'high', 'medium', 'low'];
+
+export const REQUEST_STATUS_ORDER: RequestItem['status'][] = ['new', 'triaged', 'converted', 'declined'];
+
+export const REQUEST_STATUS_META: Record<
+  RequestItem['status'],
+  { label: string; chip: string; dot: string }
+> = {
+  new: { label: 'New', chip: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
+  triaged: { label: 'Triaged', chip: 'bg-slate-100 text-slate-600 border-slate-200', dot: 'bg-slate-400' },
+  converted: { label: 'Converted', chip: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  declined: { label: 'Declined', chip: 'bg-red-100 text-red-600 border-red-200', dot: 'bg-red-400' },
+};
 
 export const ROLE_META: Record<Role, { label: string; chip: string }> = {
   admin: { label: 'Admin', chip: 'bg-[#1c2b3a] text-white border-[#1c2b3a]' },

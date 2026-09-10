@@ -77,6 +77,13 @@ const Navbar = () => {
         {/* Right side */}
         <div className="hidden md:flex items-center gap-4">
           <Link
+            to="/request"
+            className="flex items-center gap-2 text-sm font-semibold text-[#1c2b3a] hover:text-[#0e1a26] cursor-pointer whitespace-nowrap px-4 py-2 rounded-md border border-[#1c2b3a]/20 hover:bg-[#1c2b3a]/5 transition-colors"
+          >
+            <i className="ri-send-plane-line text-base"></i>
+            Submit a request
+          </Link>
+          <Link
             to="/login"
             className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900 cursor-pointer whitespace-nowrap"
           >
@@ -109,6 +116,13 @@ const Navbar = () => {
               {item.label}
             </Link>
           ))}
+          <Link
+            to="/request"
+            onClick={() => setMenuOpen(false)}
+            className="flex items-center gap-2 text-sm font-semibold text-[#1c2b3a] cursor-pointer whitespace-nowrap"
+          >
+            <i className="ri-send-plane-line"></i> Submit a request
+          </Link>
           <Link
             to="/login"
             onClick={() => setMenuOpen(false)}

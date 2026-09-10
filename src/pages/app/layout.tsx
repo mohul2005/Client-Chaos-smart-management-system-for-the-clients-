@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { runReminderSweep } from '@/lib/notifications';
 import AppSidebar from './components/AppSidebar';
 
 const TITLES: Record<string, { title: string; subtitle: string }> = {
+  '/app': { title: 'Overview', subtitle: 'A live pulse on workload, progress and risk.' },
   '/app/board': { title: 'Task Board', subtitle: 'Every client task, tracked from request to done.' },
+  '/app/requests': { title: 'Request Inbox', subtitle: 'Incoming client requests, ready to triage and convert.' },
   '/app/clients': { title: 'Clients', subtitle: 'The accounts your team is delivering for.' },
   '/app/team': { title: 'Team', subtitle: 'Who is on the ground and what they own.' },
+  '/app/settings': { title: 'Settings', subtitle: 'Your personal notification preferences.' },
 };
 
 export default function AppLayout() {
@@ -15,6 +19,12 @@ export default function AppLayout() {
   useEffect(() => {
     setMenuOpen(false);
   }, [location.pathname]);
+
+  // Safety-net scheduler: the first person in each day kicks off the reminder
+  // sweep (the backend de-duplicates, so this is safe alongside the cron job).
+  useEffect(() => {
+    runReminderSweep();
+  }, []);
 
   const meta = TITLES[location.pathname] || { title: 'Workspace', subtitle: '' };
 

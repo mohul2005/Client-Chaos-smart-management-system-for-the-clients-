@@ -10,6 +10,8 @@ export interface Profile {
   email: string | null;
   role: Role;
   avatar_color: string | null;
+  reminder_lead_days: number;
+  assignment_emails: boolean;
   created_at: string;
 }
 
@@ -57,9 +59,27 @@ export interface TaskComment {
   created_at: string;
 }
 
+/** A recorded change made to a task by a teammate. */
+export interface TaskActivity {
+  id: string;
+  task_id: string | null;
+  actor_id: string | null;
+  kind: string;
+  field: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  created_at: string;
+}
+
+/** A comment or activity event, used to render the merged task trail. */
+export type TrailEntry =
+  | { type: 'comment'; at: string; comment: TaskComment }
+  | { type: 'activity'; at: string; activity: TaskActivity };
+
 /** A task enriched with resolved client + assignee info for display. */
 export interface TaskView extends Task {
   clientName: string | null;
   assigneeName: string | null;
   assigneeColor: string | null;
+  commentCount: number;
 }

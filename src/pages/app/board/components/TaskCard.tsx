@@ -68,6 +68,12 @@ export default function TaskCard({ task, onOpen, onDragStart, onDragEnd, onMove,
           <span className={`text-[11px] font-medium truncate ${toneClass[due.tone]}`}>
             {task.status === 'done' ? 'Completed' : due.label}
           </span>
+          {task.commentCount > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-slate-400 shrink-0">
+              <i className="ri-chat-3-line text-xs"></i>
+              {task.commentCount}
+            </span>
+          )}
         </div>
 
         {/* Quick move */}

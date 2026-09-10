@@ -4,9 +4,12 @@ import { AVATAR_BG } from '@/lib/constants';
 import { initials } from '@/lib/format';
 
 const navItems = [
+  { label: 'Overview', path: '/app', icon: 'ri-dashboard-3-line', end: true },
   { label: 'Task Board', path: '/app/board', icon: 'ri-layout-column-line' },
+  { label: 'Requests', path: '/app/requests', icon: 'ri-inbox-archive-line' },
   { label: 'Clients', path: '/app/clients', icon: 'ri-briefcase-4-line' },
   { label: 'Team', path: '/app/team', icon: 'ri-team-line' },
+  { label: 'Settings', path: '/app/settings', icon: 'ri-settings-3-line' },
 ];
 
 interface Props {
@@ -68,6 +71,7 @@ export default function AppSidebar({ open, onClose }: Props) {
             <NavLink
               key={item.path}
               to={item.path}
+              end={item.end}
               onClick={onClose}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer whitespace-nowrap ${
@@ -87,7 +91,7 @@ export default function AppSidebar({ open, onClose }: Props) {
           <div className="mt-6 px-3 py-3 rounded-lg bg-white/5 border border-white/10">
             <p className="text-[11px] text-white/50 leading-relaxed">
               <i className="ri-information-line mr-1"></i>
-              Client requests and overview are coming in the next phase.
+              Client requests land in Requests — convert one to a task in a click.
             </p>
           </div>
         </nav>
