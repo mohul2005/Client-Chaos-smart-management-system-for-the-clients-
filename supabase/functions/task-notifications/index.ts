@@ -8,6 +8,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 // Emails are sent through Resend using RESEND_API_KEY + RESEND_FROM_DOMAIN.
 // Each owner controls their own reminder lead time (1-3 days before due) and
 // can mute assignment emails independently of the daily reminders.
+// Assignment emails resolve as: personal override -> workspace default.
+// Tasks paused with status "waiting_on_client" are never treated as overdue.
 // ---------------------------------------------------------------------------
 
 const corsHeaders = {
@@ -17,6 +19,7 @@ const corsHeaders = {
 };
 
 const BRAND = 'TASKS';
+const ASSIGNMENT_DEFAULT_KEY = 'default_assignment_emails';
 
 const PRIORITY_LABEL: Record<string, string> = {
   low: 'Low',
@@ -153,6 +156,17 @@ function boardUrl(origin: unknown): string {
   return `${base}/app/board`;
 }
 
+/** The workspace-wide baseline for assignment emails (defaults to on). */
+// deno-lint-ignore no-explicit-any
+async function workspaceAssignmentDefault(admin: any): Promise<boolean> {
+  const { data } = await admin
+    .from('app_config')
+    .select('value')
+    .eq('key', ASSIGNMENT_DEFAULT_KEY)
+    .maybeSingle();
+  return ((data as Row | null)?.value ?? 'true') !== 'false';
+}
+
 // deno-lint-ignore no-explicit-any
 async function handleAssigned(admin: any, body: Row) {
   const taskId = String(body.taskId || '');
@@ -169,13 +183,16 @@ async function handleAssigned(admin: any, body: Row) {
 
   const { data: profile } = await admin
     .from('profiles')
-    .select('id, full_name, email, assignment_emails')
+    .select('id, full_name, email, assignment_emails_override')
     .eq('id', task.assignee_id)
     .maybeSingle();
   const to = (profile as Row | null)?.email as string | undefined;
   if (!to) return json({ ok: true, skipped: 'assignee has no email' });
-  // Respect the teammate's personal "email me on assignment" preference.
-  if ((profile as Row | null)?.assignment_emails === false) {
+
+  // Effective setting: a personal override wins, otherwise the workspace default.
+  const override = (profile as Row | null)?.assignment_emails_override;
+  const effective = override == null ? await workspaceAssignmentDefault(admin) : override === true;
+  if (effective === false) {
     return json({ ok: true, skipped: 'assignee muted assignment emails' });
   }
 
@@ -232,6 +249,7 @@ async function handleDigest(admin: any, body: Row) {
     .from('tasks')
     .select('id, title, priority, status, due_date, assignee_id, client_id, last_reminder_at')
     .neq('status', 'done')
+    .neq('status', 'waiting_on_client')
     .not('assignee_id', 'is', null)
     .not('due_date', 'is', null)
     .lte('due_date', horizonIso);
@@ -256,7 +274,8 @@ async function handleDigest(admin: any, body: Row) {
   };
 
   // A task is nudged when it falls inside the owner's personal window (or is
-  // already overdue) and hasn't already been remembered today.
+  // already overdue) and hasn't already been remembered today. Waiting-on-client
+  // tasks are excluded above, so a paused request never reads as forgotten.
   const due = allTasks.filter((t) => {
     if (t.last_reminder_at && String(t.last_reminder_at) >= startOfToday) return false;
     const diff = dayDiff(t.due_date, todayIso);

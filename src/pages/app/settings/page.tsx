@@ -2,27 +2,43 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { AVATAR_BG, ROLE_META } from '@/lib/constants';
 import { initials } from '@/lib/format';
+import { getAssignmentEmailDefault } from '@/lib/workspaceSettings';
 import LeadTimeCard from './components/LeadTimeCard';
 import AssignmentEmailCard from './components/AssignmentEmailCard';
+import WorkspaceAssignmentCard from './components/WorkspaceAssignmentCard';
 
 const DEFAULTS = [1, 2, 3];
 
 export default function SettingsPage() {
   const { profile, refreshProfile } = useAuth();
   const [lead, setLead] = useState<number>(profile?.reminder_lead_days ?? 1);
-  const [assignmentEmails, setAssignmentEmails] = useState<boolean>(profile?.assignment_emails ?? true);
+  const [assignmentOverride, setAssignmentOverride] = useState<boolean | null>(
+    profile?.assignment_emails_override ?? null,
+  );
+  const [workspaceDefault, setWorkspaceDefault] = useState<boolean>(true);
 
   useEffect(() => {
     if (profile?.reminder_lead_days) setLead(profile.reminder_lead_days);
   }, [profile?.reminder_lead_days]);
 
   useEffect(() => {
-    if (profile) setAssignmentEmails(profile.assignment_emails ?? true);
+    if (profile) setAssignmentOverride(profile.assignment_emails_override ?? null);
   }, [profile]);
+
+  useEffect(() => {
+    let active = true;
+    getAssignmentEmailDefault().then((value) => {
+      if (active) setWorkspaceDefault(value);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const color = AVATAR_BG[profile?.avatar_color || 'default'] || AVATAR_BG.default;
   const role = profile?.role ? ROLE_META[profile.role] : null;
   const safeLead = DEFAULTS.includes(lead) ? lead : 1;
+  const isAdmin = profile?.role === 'admin';
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-6">
@@ -62,12 +78,26 @@ export default function SettingsPage() {
         />
       )}
 
+      {isAdmin && (
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center gap-2 pt-1">
+            <i className="ri-settings-5-line text-slate-400"></i>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">Workspace controls</h2>
+          </div>
+          <WorkspaceAssignmentCard
+            current={workspaceDefault}
+            onSaved={(enabled) => setWorkspaceDefault(enabled)}
+          />
+        </div>
+      )}
+
       {profile && (
         <AssignmentEmailCard
           userId={profile.id}
-          current={assignmentEmails}
-          onSaved={async (enabled) => {
-            setAssignmentEmails(enabled);
+          current={assignmentOverride}
+          workspaceDefault={workspaceDefault}
+          onSaved={async (override) => {
+            setAssignmentOverride(override);
             await refreshProfile();
           }}
         />

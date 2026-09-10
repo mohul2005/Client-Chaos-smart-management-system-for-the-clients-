@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useWorkspace, type TaskInput } from '@/hooks/useWorkspace';
 import type { Priority, TaskStatus, TaskView } from '@/lib/types';
 import { PRIORITY_META, PRIORITY_ORDER, STATUS_META, STATUS_ORDER } from '@/lib/constants';
-import { dueMeta } from '@/lib/format';
+import { isTaskOverdue } from '@/lib/workflow';
 import TaskCard from './components/TaskCard';
 import TaskModal from './components/TaskModal';
 
@@ -46,7 +46,7 @@ export default function BoardPage() {
   }, [tasks, query, assignee, priority, client]);
 
   const grouped = useMemo(() => {
-    const map: Record<TaskStatus, TaskView[]> = { todo: [], in_progress: [], review: [], done: [] };
+    const map: Record<TaskStatus, TaskView[]> = { todo: [], in_progress: [], waiting_on_client: [], review: [], done: [] };
     filtered.forEach((t) => map[t.status]?.push(t));
     Object.values(map).forEach((list) =>
       list.sort((a, b) => PRIORITY_META[b.priority].rank - PRIORITY_META[a.priority].rank),
@@ -56,10 +56,7 @@ export default function BoardPage() {
 
   const stats = useMemo(() => {
     const open = tasks.filter((t) => t.status !== 'done');
-    const overdue = open.filter((t) => {
-      const d = dueMeta(t.due_date);
-      return d.tone === 'danger';
-    });
+    const overdue = open.filter((t) => isTaskOverdue(t));
     const unassigned = open.filter((t) => !t.assignee_id);
     return [
       { label: 'Open tasks', value: open.length, icon: 'ri-list-check-2', tone: 'text-slate-700' },
@@ -214,7 +211,7 @@ export default function BoardPage() {
 
       {/* Loading */}
       {loading && !error ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {STATUS_ORDER.map((s) => (
             <div key={s} className="flex flex-col gap-3">
               <div className="h-6 w-24 rounded bg-slate-200 animate-pulse" />
@@ -225,7 +222,7 @@ export default function BoardPage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-start">
           {STATUS_ORDER.map((status) => {
             const list = grouped[status];
             const meta = STATUS_META[status];

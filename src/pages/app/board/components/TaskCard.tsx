@@ -23,6 +23,9 @@ export default function TaskCard({ task, onOpen, onDragStart, onDragEnd, onMove,
   const due = dueMeta(task.due_date);
   const statusIndex = STATUS_ORDER.indexOf(task.status);
   const avatarColor = AVATAR_BG[task.assigneeColor || 'default'] || AVATAR_BG.default;
+  const waiting = task.status === 'waiting_on_client';
+  const dueTone = task.status === 'done' ? 'done' : waiting ? 'muted' : due.tone;
+  const dueLabel = task.status === 'done' ? 'Completed' : waiting ? 'Waiting on client' : due.label;
 
   return (
     <article
@@ -65,8 +68,8 @@ export default function TaskCard({ task, onOpen, onDragStart, onDragEnd, onMove,
               <i className="ri-user-add-line text-[11px] text-slate-400"></i>
             </div>
           )}
-          <span className={`text-[11px] font-medium truncate ${toneClass[due.tone]}`}>
-            {task.status === 'done' ? 'Completed' : due.label}
+          <span className={`text-[11px] font-medium truncate ${toneClass[dueTone]}`}>
+            {dueLabel}
           </span>
           {task.commentCount > 0 && (
             <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-slate-400 shrink-0">
@@ -105,12 +108,19 @@ export default function TaskCard({ task, onOpen, onDragStart, onDragEnd, onMove,
         </div>
       </div>
 
-      {task.status !== 'done' && due.tone === 'danger' && (
+      {task.status !== 'done' && !waiting && due.tone === 'danger' && (
         <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex items-center gap-1.5">
           <i className="ri-alarm-warning-line text-xs text-red-500"></i>
           <span className="text-[11px] font-medium text-red-600">
             {STATUS_META[task.status].label} · needs attention
           </span>
+        </div>
+      )}
+
+      {waiting && (
+        <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex items-center gap-1.5">
+          <i className="ri-shield-check-line text-xs text-stone-500"></i>
+          <span className="text-[11px] font-medium text-stone-600">Paused — not counted as overdue</span>
         </div>
       )}
     </article>

@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useRequests, type ConvertPayload } from '@/hooks/useRequests';
-import type { RequestItem } from '@/lib/types';
-import { REQUEST_STATUS_META, REQUEST_STATUS_ORDER } from '@/lib/constants';
+import { useRequests, type AssignPayload } from '@/hooks/useRequests';
+import type { RequestBucket, RequestStatus, RequestView } from '@/lib/types';
+import { REQUEST_BUCKET_META, REQUEST_BUCKET_ORDER, REQUEST_STATUS_META, REQUEST_STATUS_ORDER } from '@/lib/constants';
+import { isRequestOverdue, requestMatchesBucket, startOfTodayMs } from '@/lib/workflow';
 import RequestCard from './components/RequestCard';
-import ConvertRequestModal from './components/ConvertRequestModal';
+import RequestBucketCards from './components/RequestBucketCards';
+import AssignRequestModal from './components/AssignRequestModal';
+import StageNoteModal from './components/StageNoteModal';
 
-type Tab = 'all' | RequestItem['status'];
+type Tab = 'all' | RequestStatus;
 
 export default function RequestsInboxPage() {
   const {
@@ -16,46 +19,59 @@ export default function RequestsInboxPage() {
     loading,
     error,
     reload,
-    setStatus,
+    moveStage,
+    assignAndStart,
     deleteRequest,
-    convertToTask,
     seedSampleRequests,
   } = useRequests();
 
   const [tab, setTab] = useState<Tab>('all');
+  const [bucket, setBucket] = useState<RequestBucket | null>(null);
   const [query, setQuery] = useState('');
-  const [convertTarget, setConvertTarget] = useState<RequestItem | null>(null);
+  const [assignTarget, setAssignTarget] = useState<RequestView | null>(null);
+  const [noteTarget, setNoteTarget] = useState<{ request: RequestView; mode: 'clarify' | 'waiting' } | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const counts = useMemo(() => {
-    const map: Record<RequestItem['status'], number> = { new: 0, triaged: 0, converted: 0, declined: 0 };
+  const statusCounts = useMemo(() => {
+    const map = Object.fromEntries(REQUEST_STATUS_ORDER.map((s) => [s, 0])) as Record<RequestStatus, number>;
     requests.forEach((r) => {
-      map[r.status] += 1;
+      map[r.status] = (map[r.status] || 0) + 1;
+    });
+    return map;
+  }, [requests]);
+
+  const bucketCounts = useMemo(() => {
+    const today = startOfTodayMs();
+    const map = Object.fromEntries(REQUEST_BUCKET_ORDER.map((b) => [b, 0])) as Record<RequestBucket, number>;
+    requests.forEach((r) => {
+      REQUEST_BUCKET_ORDER.forEach((b) => {
+        if (requestMatchesBucket(r, b, today)) map[b] += 1;
+      });
     });
     return map;
   }, [requests]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const today = startOfTodayMs();
     return requests.filter((r) => {
       if (tab !== 'all' && r.status !== tab) return false;
-      if (q && !`${r.title} ${r.details ?? ''} ${r.client_name ?? ''} ${r.contact_email ?? ''}`.toLowerCase().includes(q))
+      if (bucket && !requestMatchesBucket(r, bucket, today)) return false;
+      if (
+        q &&
+        !`${r.title} ${r.details ?? ''} ${r.clientName ?? ''} ${r.client_name ?? ''} ${r.contact_email ?? ''}`
+          .toLowerCase()
+          .includes(q)
+      )
         return false;
       return true;
     });
-  }, [requests, tab, query]);
-
-  const stats = [
-    { label: 'New requests', value: counts.new, icon: 'ri-inbox-unarchive-line', tone: 'text-amber-600' },
-    { label: 'In triage', value: counts.triaged, icon: 'ri-bookmark-line', tone: 'text-slate-700' },
-    { label: 'Converted', value: counts.converted, icon: 'ri-checkbox-circle-line', tone: 'text-emerald-600' },
-    { label: 'Total received', value: requests.length, icon: 'ri-stack-line', tone: 'text-slate-700' },
-  ];
+  }, [requests, tab, bucket, query]);
 
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: requests.length },
-    ...REQUEST_STATUS_ORDER.map((s) => ({ key: s as Tab, label: REQUEST_STATUS_META[s].label, count: counts[s] })),
+    ...REQUEST_STATUS_ORDER.map((s) => ({ key: s as Tab, label: REQUEST_STATUS_META[s].short, count: statusCounts[s] })),
   ];
 
   const intakeUrl = useMemo(() => {
@@ -74,7 +90,23 @@ export default function RequestsInboxPage() {
     }
   };
 
-  const handleConvert = (request: RequestItem, payload: ConvertPayload) => convertToTask(request, payload);
+  /** Route a stage move: some stages capture a note first. */
+  const handleStage = (request: RequestView, status: RequestStatus) => {
+    if (status === 'needs_clarification') {
+      setNoteTarget({ request, mode: 'clarify' });
+      return;
+    }
+    if (status === 'waiting_on_client') {
+      setNoteTarget({ request, mode: 'waiting' });
+      return;
+    }
+    void moveStage(request, status);
+  };
+
+  const handleSaveNote = async (request: RequestView, status: RequestStatus, note: string) =>
+    moveStage(request, status, { clarification_note: note || null });
+
+  const handleAssign = async (request: RequestView, payload: AssignPayload) => assignAndStart(request, payload);
 
   const handleSeed = async () => {
     setSeeding(true);
@@ -87,22 +119,36 @@ export default function RequestsInboxPage() {
     }
   };
 
+  const overdueNow = requests.filter((r) => isRequestOverdue(r)).length;
+
   return (
     <div className="w-full">
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
-        {stats.map((s) => (
-          <div key={s.label} className="bg-white rounded-lg border border-slate-200 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-slate-400">{s.label}</span>
-              <div className="w-7 h-7 rounded-md bg-slate-50 flex items-center justify-center">
-                <i className={`${s.icon} text-base ${s.tone}`}></i>
-              </div>
+      {/* Manager buckets */}
+      <RequestBucketCards counts={bucketCounts} active={bucket} onSelect={setBucket} />
+
+      {overdueNow > 0 && bucket !== 'overdue' && (
+        <div className="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+              <i className="ri-alarm-warning-line text-red-600"></i>
             </div>
-            <p className={`text-2xl font-black ${s.tone}`}>{s.value}</p>
+            <p className="text-sm text-red-700">
+              <strong>{overdueNow}</strong> request{overdueNow === 1 ? '' : 's'} overdue
+              <span className="text-red-500/80"> (waiting-on-client work excluded)</span>.
+            </p>
           </div>
-        ))}
-      </div>
+          <button
+            type="button"
+            onClick={() => {
+              setBucket('overdue');
+              setTab('all');
+            }}
+            className="self-start sm:self-auto px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            Show overdue
+          </button>
+        </div>
+      )}
 
       {/* Intake link banner */}
       <div className="mb-5 flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 rounded-lg bg-[#1c2b3a] text-white">
@@ -169,6 +215,24 @@ export default function RequestsInboxPage() {
         </div>
       </div>
 
+      {/* Active bucket chip */}
+      {bucket && (
+        <div className="mb-4 flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+            <i className={REQUEST_BUCKET_META[bucket].icon}></i>
+            Filtering: {REQUEST_BUCKET_META[bucket].label}
+            <button
+              type="button"
+              onClick={() => setBucket(null)}
+              className="ml-1 w-4 h-4 flex items-center justify-center rounded-full hover:bg-slate-200 cursor-pointer"
+              aria-label="Clear filter"
+            >
+              <i className="ri-close-line text-sm"></i>
+            </button>
+          </span>
+        </div>
+      )}
+
       {/* Error */}
       {error && (
         <div className="mb-5 flex items-center justify-between gap-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200">
@@ -230,22 +294,29 @@ export default function RequestsInboxPage() {
             <RequestCard
               key={r.id}
               request={r}
-              onConvert={(req) => setConvertTarget(req)}
-              onTriage={(req) => void setStatus(req.id, 'triaged')}
-              onDecline={(req) => void setStatus(req.id, 'declined')}
+              onAssign={(req) => setAssignTarget(req)}
+              onStage={handleStage}
               onDelete={(req) => void deleteRequest(req.id)}
             />
           ))}
         </div>
       )}
 
-      <ConvertRequestModal
-        open={Boolean(convertTarget)}
-        request={convertTarget}
+      <AssignRequestModal
+        open={Boolean(assignTarget)}
+        request={assignTarget}
         clients={clients}
         members={members}
-        onClose={() => setConvertTarget(null)}
-        onConvert={handleConvert}
+        onClose={() => setAssignTarget(null)}
+        onAssign={handleAssign}
+      />
+
+      <StageNoteModal
+        open={Boolean(noteTarget)}
+        request={noteTarget?.request ?? null}
+        mode={noteTarget?.mode ?? 'clarify'}
+        onClose={() => setNoteTarget(null)}
+        onSave={handleSaveNote}
       />
     </div>
   );

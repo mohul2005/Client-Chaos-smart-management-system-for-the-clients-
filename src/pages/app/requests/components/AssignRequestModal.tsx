@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import type { Client, Priority, Profile, RequestItem } from '@/lib/types';
+import type { Client, Priority, Profile, RequestView } from '@/lib/types';
 import { PRIORITY_META, PRIORITY_ORDER } from '@/lib/constants';
-import type { ConvertPayload } from '@/hooks/useRequests';
+import type { AssignPayload } from '@/hooks/useRequests';
 
 interface Props {
   open: boolean;
-  request: RequestItem | null;
+  request: RequestView | null;
   clients: Client[];
   members: Profile[];
   onClose: () => void;
-  onConvert: (request: RequestItem, payload: ConvertPayload) => Promise<void>;
+  onAssign: (request: RequestView, payload: AssignPayload) => Promise<void>;
 }
 
 /** Try to match the request's free-text client name to a known client. */
@@ -24,7 +24,7 @@ function matchClient(name: string | null, clients: Client[]): string | null {
   return partial?.id ?? null;
 }
 
-export default function ConvertRequestModal({ open, request, clients, members, onClose, onConvert }: Props) {
+export default function AssignRequestModal({ open, request, clients, members, onClose, onAssign }: Props) {
   const [clientId, setClientId] = useState<string>('');
   const [assigneeId, setAssigneeId] = useState<string>('');
   const [priority, setPriority] = useState<Priority>('medium');
@@ -32,15 +32,18 @@ export default function ConvertRequestModal({ open, request, clients, members, o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const suggestedClient = useMemo(() => matchClient(request?.client_name ?? null, clients), [request, clients]);
+  const suggestedClient = useMemo(
+    () => matchClient(request?.clientName ?? request?.client_name ?? null, clients),
+    [request, clients],
+  );
 
   useEffect(() => {
     if (!open || !request) return;
     setError('');
     setClientId(suggestedClient ?? '');
-    setAssigneeId('');
+    setAssigneeId(request.assignee_id ?? '');
     setPriority(request.priority);
-    setDueDate('');
+    setDueDate(request.due_date ?? '');
   }, [open, request, suggestedClient]);
 
   if (!open || !request) return null;
@@ -54,7 +57,7 @@ export default function ConvertRequestModal({ open, request, clients, members, o
     setBusy(true);
     setError('');
     try {
-      await onConvert(request, {
+      await onAssign(request, {
         client_id: clientId || null,
         assignee_id: assigneeId || null,
         priority,
@@ -62,7 +65,7 @@ export default function ConvertRequestModal({ open, request, clients, members, o
       });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not convert the request.');
+      setError(err instanceof Error ? err.message : 'Could not assign the request.');
     } finally {
       setBusy(false);
     }
@@ -75,8 +78,8 @@ export default function ConvertRequestModal({ open, request, clients, members, o
       <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-xl border border-slate-200">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
           <div>
-            <h3 className="font-bold text-base text-slate-900">Convert to task</h3>
-            <p className="text-xs text-slate-400">Give it an owner and a deadline so it gets done.</p>
+            <h3 className="font-bold text-base text-slate-900">Assign &amp; start work</h3>
+            <p className="text-xs text-slate-400">Give it an owner and a deadline. It becomes a board task.</p>
           </div>
           <button
             type="button"
@@ -93,7 +96,7 @@ export default function ConvertRequestModal({ open, request, clients, members, o
           <div className="px-3.5 py-3 rounded-md bg-slate-50 border border-slate-200">
             <p className="text-sm font-semibold text-slate-900">{request.title}</p>
             <p className="text-xs text-slate-500 mt-1">
-              From {request.client_name || 'Unknown'} · {request.contact_email || 'no email'}
+              From {request.clientName || request.client_name || 'Unknown'} · {request.contact_email || 'no email'}
             </p>
           </div>
 
@@ -156,8 +159,8 @@ export default function ConvertRequestModal({ open, request, clients, members, o
           <div className="flex items-start gap-2 px-3 py-2.5 rounded-md bg-amber-50 border border-amber-200">
             <i className="ri-information-line text-amber-600 text-base mt-0.5"></i>
             <p className="text-xs text-amber-700 leading-relaxed">
-              This request will be marked <strong>converted</strong> and a task will appear on the board with status
-              "To Do".
+              This request moves to <strong>In Progress</strong> and a task appears on the board, owned by whoever you
+              pick. Nothing lands in a task list before this step.
             </p>
           </div>
 
@@ -181,8 +184,8 @@ export default function ConvertRequestModal({ open, request, clients, members, o
               disabled={busy}
               className="flex items-center gap-2 px-5 py-2.5 rounded-md bg-[#1c2b3a] text-white text-sm font-semibold hover:bg-[#0e1a26] transition-colors cursor-pointer whitespace-nowrap disabled:opacity-60"
             >
-              {busy ? <i className="ri-loader-4-line animate-spin"></i> : <i className="ri-magic-line"></i>}
-              Create task
+              {busy ? <i className="ri-loader-4-line animate-spin"></i> : <i className="ri-user-add-line"></i>}
+              Assign &amp; start
             </button>
           </div>
         </form>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { notifyAssignment } from '@/lib/notifications';
+import { requestStageForTaskStatus } from '@/lib/workflow';
 import type { Client, Priority, Profile, Task, TaskStatus, TaskView } from '@/lib/types';
 
 export interface TaskInput {
@@ -157,6 +158,13 @@ export function useWorkspace() {
       if (current) {
         const events = diffTask(current, patch);
         await logActivity(events.map((e) => ({ ...e, task_id: id, actor_id: actorId })));
+        // Keep the originating client request in step with its board task.
+        if (patch.status && patch.status !== current.status && current.request_id) {
+          await supabase
+            .from('requests')
+            .update({ status: requestStageForTaskStatus(patch.status), updated_at: new Date().toISOString() })
+            .eq('id', current.request_id);
+        }
       }
       // Notify only when the task is freshly assigned to a different teammate.
       if (patch.assignee_id && patch.assignee_id !== current?.assignee_id) {

@@ -6,7 +6,7 @@ import AppSidebar from './components/AppSidebar';
 const TITLES: Record<string, { title: string; subtitle: string }> = {
   '/app': { title: 'Overview', subtitle: 'A live pulse on workload, progress and risk.' },
   '/app/board': { title: 'Task Board', subtitle: 'Every client task, tracked from request to done.' },
-  '/app/requests': { title: 'Request Inbox', subtitle: 'Incoming client requests, ready to triage and convert.' },
+  '/app/requests': { title: 'Request Inbox', subtitle: 'Client requests moving through the pipeline — clarification to done.' },
   '/app/clients': { title: 'Clients', subtitle: 'The accounts your team is delivering for.' },
   '/app/team': { title: 'Team', subtitle: 'Who is on the ground and what they own.' },
   '/app/settings': { title: 'Settings', subtitle: 'Your personal notification preferences.' },

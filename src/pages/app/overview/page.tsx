@@ -4,8 +4,9 @@ import { useWorkspace } from '@/hooks/useWorkspace';
 import { useRequests } from '@/hooks/useRequests';
 import { useAuth } from '@/context/AuthContext';
 import type { TaskView } from '@/lib/types';
-import { PRIORITY_ORDER, STATUS_ORDER } from '@/lib/constants';
+import { PRIORITY_ORDER, REQUEST_BUCKET_ORDER, STATUS_ORDER } from '@/lib/constants';
 import { dueMeta } from '@/lib/format';
+import { isTaskOverdue, requestMatchesBucket } from '@/lib/workflow';
 import MetricCards, { type Metric } from './components/MetricCards';
 import WorkloadPanel, { type WorkloadRow } from './components/WorkloadPanel';
 import DistributionPanel from './components/DistributionPanel';
@@ -25,8 +26,7 @@ export default function OverviewPage() {
   }, []);
 
   const data = useMemo(() => {
-    const isOverdue = (t: TaskView) =>
-      t.status !== 'done' && !!t.due_date && new Date(`${t.due_date}T00:00:00`).getTime() < startOfToday;
+    const isOverdue = (t: TaskView) => isTaskOverdue(t, startOfToday);
 
     const openTasks = tasks.filter((t) => t.status !== 'done');
     const overdue = openTasks.filter(isOverdue);
@@ -64,6 +64,7 @@ export default function OverviewPage() {
     const toneRank = (t: TaskView) => (dueMeta(t.due_date).tone === 'danger' ? 0 : 1);
     const attention = openTasks
       .filter((t) => {
+        if (t.status === 'waiting_on_client') return false;
         const tone = dueMeta(t.due_date).tone;
         return tone === 'danger' || tone === 'warn';
       })
@@ -73,20 +74,27 @@ export default function OverviewPage() {
       })
       .slice(0, 6);
 
+    const requestBuckets = Object.fromEntries(REQUEST_BUCKET_ORDER.map((b) => [b, 0])) as Record<
+      (typeof REQUEST_BUCKET_ORDER)[number],
+      number
+    >;
+    requests.forEach((r) => {
+      REQUEST_BUCKET_ORDER.forEach((b) => {
+        if (requestMatchesBucket(r, b, startOfToday)) requestBuckets[b] += 1;
+      });
+    });
+
     return {
       openTasks,
       overdue,
-      dueSoon: openTasks.filter((t) => dueMeta(t.due_date).tone === 'warn').length,
+      dueSoon: openTasks.filter((t) => t.status !== 'waiting_on_client' && dueMeta(t.due_date).tone === 'warn').length,
       inProgress,
       completed,
       statusCounts,
       priorityCounts,
       workload,
       attention,
-      newRequests: requests.filter((r) => r.status === 'new').length,
-      triaged: requests.filter((r) => r.status === 'triaged').length,
-      converted: requests.filter((r) => r.status === 'converted').length,
-      declined: requests.filter((r) => r.status === 'declined').length,
+      requestBuckets,
     };
   }, [tasks, members, requests, startOfToday]);
 
@@ -132,13 +140,13 @@ export default function OverviewPage() {
       hint: `${doneRate}% completion rate`,
     },
     {
-      label: 'New requests',
-      value: data.newRequests,
-      icon: 'ri-inbox-unarchive-line',
+      label: 'Waiting for us',
+      value: data.requestBuckets.waiting_for_us,
+      icon: 'ri-focus-3-line',
       valueTone: 'text-[#1c2b3a]',
       iconTone: 'text-[#1c2b3a]',
       iconBg: 'bg-slate-100',
-      hint: 'Awaiting triage',
+      hint: 'Requests our team owes a move on',
     },
   ];
 
@@ -260,12 +268,7 @@ export default function OverviewPage() {
               total={total}
               openTotal={data.openTasks.length}
             />
-            <TriagePanel
-              newCount={data.newRequests}
-              triaged={data.triaged}
-              converted={data.converted}
-              declined={data.declined}
-            />
+            <TriagePanel counts={data.requestBuckets} />
             <ReminderPanel overdueCount={data.overdue.length} dueSoonCount={data.dueSoon} />
           </div>
         </div>

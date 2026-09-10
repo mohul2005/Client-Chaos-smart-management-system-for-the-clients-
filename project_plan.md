@@ -18,17 +18,18 @@ This MVP attacks the single highest-impact problem first: **tasks getting forgot
 - `/request` - Public client request intake (submit a request)
 - `/app` - Overview dashboard (live metrics)
 - `/app/board` - Team task board (Kanban)
-- `/app/requests` - Request inbox (triage incoming client requests)
+- `/app/requests` - Request inbox (run the client-request lifecycle from clarification to done)
 - `/app/clients` - Client directory
 - `/app/team` - Team directory
-- `/app/settings` - Personal settings (per-teammate reminder lead time)
+- `/app/settings` - Settings (personal reminder lead time + notification preferences; admins also get workspace-wide defaults)
 
 ## 3. Core Features
 - [x] Team authentication (email + password sign in / sign up)
 - [x] Team directory with profiles
 - [x] Client directory
 - [x] Task board with owners, priority, status, due date (create / edit / move / delete)
-- [x] Client request intake form -> requests inbox -> convert to task
+- [x] Client request intake form -> requests inbox -> full lifecycle: New -> Needs Clarification -> Ready to Assign -> In Progress -> Waiting on Client -> Done. A board task is created only when a request reaches "In Progress", so requests awaiting information never sit in someone's task list.
+- [x] Manager request buckets: Waiting for us / Waiting for the client / Unassigned / Overdue. A request "Waiting on Client" is never counted as overdue or stale.
 - [x] Overview dashboard at /app: open/overdue/in-progress/completed, workload per owner, pipeline breakdown, attention list
 - [x] Task activity / comments trail (who changed what, when, plus discussion)
 - [x] Email notifications: assignment emails + a daily overdue / due-soon reminder digest
@@ -45,7 +46,8 @@ This MVP attacks the single highest-impact problem first: **tasks getting forgot
 | role | text | admin / manager / member |
 | avatar_color | text | Accent color for avatar |
 | reminder_lead_days | int | Days before a due date to send this teammate a nudge (1–3, default 1) |
-| assignment_emails | boolean | Whether this teammate receives assignment emails (default true) |
+| assignment_emails | boolean | Deprecated — superseded by assignment_emails_override |
+| assignment_emails_override | boolean (nullable) | Per-teammate override: null = follow the workspace default, true = always on, false = muted |
 | created_at | timestamptz | Created timestamp |
 
 ### Table: clients
@@ -67,10 +69,11 @@ This MVP attacks the single highest-impact problem first: **tasks getting forgot
 | description | text | Details |
 | client_id | uuid | FK -> clients |
 | assignee_id | uuid | FK -> profiles |
-| status | text | todo / in_progress / review / done |
+| status | text | todo / in_progress / waiting_on_client / review / done |
 | priority | text | low / medium / high / urgent |
 | due_date | date | Due date |
 | source | text | request / internal |
+| request_id | uuid | Set when the task originated from a client request (nullable) |
 | created_by | uuid | FK -> profiles |
 | created_at | timestamptz | Created timestamp |
 | updated_at | timestamptz | Updated timestamp |
@@ -85,8 +88,14 @@ This MVP attacks the single highest-impact problem first: **tasks getting forgot
 | title | text | Request title |
 | details | text | Request details |
 | priority | text | low / medium / high / urgent |
-| status | text | new / triaged / converted / declined |
+| status | text | Lifecycle stage: new / needs_clarification / ready_to_assign / in_progress / waiting_on_client / done / declined |
+| assignee_id | uuid | FK -> profiles. The owner once assigned (nullable) |
+| due_date | date | Target date, used for the Overdue bucket (nullable) |
+| client_id | uuid | FK -> clients once matched (nullable) |
+| task_id | uuid | FK -> tasks. The board task spawned at "In Progress" (nullable) |
+| clarification_note | text | What we are asking the client for / waiting on (nullable) |
 | created_at | timestamptz | Created timestamp |
+| updated_at | timestamptz | Last stage change |
 
 ### Table: task_comments
 | Field | Type | Description |
@@ -112,8 +121,8 @@ This MVP attacks the single highest-impact problem first: **tasks getting forgot
 ### Table: app_config
 | Field | Type | Description |
 |-------|------|-------------|
-| key | text | Primary key (e.g. `reminder_token`) |
-| value | text | Value (RLS locked; read only by backend service role) |
+| key | text | Primary key (e.g. `reminder_token`, `default_assignment_emails`) |
+| value | text | Value (RLS locked; the notification keys are readable by signed-in teammates, the rest by the backend service role only; admin-only write for `default_assignment_emails`) |
 | created_at | timestamptz | Created timestamp |
 
 ## 5. Backend / Third-party Integration Plan
@@ -124,7 +133,8 @@ This MVP attacks the single highest-impact problem first: **tasks getting forgot
     once-per-day in-app sweep as a safety net. Tasks are de-duplicated via `last_reminder_at`.
   - Each owner's nudge window is driven by their own `profiles.reminder_lead_days` (1–3 days),
     editable from `/app/settings`; overdue tasks are always included. Assignment emails
-    can be muted per teammate via `profiles.assignment_emails` without affecting reminders.
+    resolve as personal override (`profiles.assignment_emails_override`) → workspace default
+    (`app_config.default_assignment_emails`), without affecting reminders.
   - Requires `RESEND_API_KEY` and `RESEND_FROM_DOMAIN` in Supabase Edge Function secrets.
 - Shopify: not needed.
 - Stripe: not needed.
@@ -157,4 +167,12 @@ This MVP attacks the single highest-impact problem first: **tasks getting forgot
 
 ### Phase 7: Assignment Email Toggle (shipped)
 - Goal: Let teammates quiet the noisier assignment email without losing the safety-net reminder digest.
-- Deliverable: `profiles.assignment_emails` column (default true) + an "Email me on assignment" switch on `/app/settings`. The `task-notifications` engine skips the assignment email when a teammate has muted it, while the daily digest stays fully independent. [x] Done.
+- Deliverable: `profiles.assignment_emails` column + an "Email me on assignment" control on `/app/settings`. The `task-notifications` engine skips the assignment email when a teammate has muted it, while the daily digest stays fully independent. [x] Done.
+
+### Phase 8: Workspace-Wide Assignment Email Default (shipped)
+- Goal: Let an admin set the team baseline for assignment emails once, while still letting each teammate override it for themselves — so policy is centralized but autonomy is preserved.
+- Deliverable: `app_config.default_assignment_emails` (readable by signed-in teammates; writable by admins only via a scoped RLS policy) + a tri-state personal control (`profiles.assignment_emails_override`: Default / On / Mute) on `/app/settings`, plus an admin-only "Workspace default" card. The `task-notifications` engine resolves the effective setting as personal override → workspace default. [x] Done.
+
+### Phase 9: Client Request Lifecycle + Manager Buckets (shipped)
+- Goal: Stop requests that are really waiting on information from looking like forgotten, overdue work — and give managers a fast read on who owes the next move.
+- Deliverable: Extended `requests` into a first-class pipeline (`new → needs_clarification → ready_to_assign → in_progress → waiting_on_client → done`, plus `declined`) with its own owner, due date, matched client, linked task and a clarification/waiting note. A board task is created only at "In Progress" ("Assign & start"). Added a `waiting_on_client` task status on the board — a paused state that is excluded from all overdue/stale logic and from the reminder digest. Request Inbox and Overview now surface four manager buckets: Waiting for us / Waiting for the client / Unassigned / Overdue. Request ↔ task status stay in sync in both directions. [x] Done.
