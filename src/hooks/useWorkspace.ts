@@ -1,17 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { notifyAssignment } from '@/lib/notifications';
-import { requestStageForTaskStatus } from '@/lib/workflow';
-import type { Client, Priority, Profile, Task, TaskStatus, TaskView } from '@/lib/types';
+import { isTaskOverdue, requestStageForTaskStatus } from '@/lib/workflow';
+import type { Client, Priority, Profile, Project, ProjectStatus, ProjectView, Task, TaskStatus, TaskView } from '@/lib/types';
 
 export interface TaskInput {
   title: string;
   description: string;
   client_id: string | null;
+  project_id: string | null;
   assignee_id: string | null;
   status: TaskStatus;
   priority: Priority;
   due_date: string | null;
+}
+
+export interface ProjectInput {
+  name: string;
+  description: string;
+  client_id: string | null;
+  status: ProjectStatus;
+  color: string;
 }
 
 type ClientInput = Omit<Client, 'id' | 'created_at'>;
@@ -44,19 +53,40 @@ function diffTask(
   if (patch.priority !== undefined) push('priority', 'priority', current.priority, patch.priority);
   if (patch.assignee_id !== undefined) push('assignee_id', 'assignee', current.assignee_id, patch.assignee_id);
   if (patch.client_id !== undefined) push('client_id', 'client', current.client_id, patch.client_id);
+  if (patch.project_id !== undefined) push('project_id', 'project', current.project_id, patch.project_id);
   if (patch.due_date !== undefined) push('due_date', 'due_date', current.due_date, patch.due_date);
   return events;
 }
 
+/** Roll up a project's task progress from its enriched tasks. */
+function buildProjectViews(projects: Project[], tasks: TaskView[], clientMap: Map<string, string>): ProjectView[] {
+  return projects.map((p) => {
+    const owned = tasks.filter((t) => t.project_id === p.id);
+    const done = owned.filter((t) => t.status === 'done').length;
+    const overdue = owned.filter((t) => t.status !== 'done' && isTaskOverdue(t)).length;
+    const total = owned.length;
+    return {
+      ...p,
+      clientName: p.client_id ? clientMap.get(p.client_id) ?? null : null,
+      totalTasks: total,
+      doneTasks: done,
+      openTasks: total - done,
+      overdueTasks: overdue,
+      progress: total === 0 ? 0 : Math.round((done / total) * 100),
+    };
+  });
+}
+
 /**
- * Shared workspace data: tasks (enriched with client + assignee),
- * the client directory and the team directory.
+ * Shared workspace data: tasks (enriched with client + assignee + project),
+ * the client directory, the team directory and the projects layer.
  */
 export function useWorkspace() {
   const [tasks, setTasks] = useState<TaskView[]>([]);
   const tasksRef = useRef<TaskView[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [members, setMembers] = useState<Profile[]>([]);
+  const [projects, setProjects] = useState<ProjectView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -64,21 +94,25 @@ export function useWorkspace() {
     setLoading(true);
     setError('');
     try {
-      const [tasksRes, clientsRes, membersRes, commentsRes] = await Promise.all([
+      const [tasksRes, clientsRes, membersRes, commentsRes, projectsRes] = await Promise.all([
         supabase.from('tasks').select('*').order('created_at', { ascending: false }),
         supabase.from('clients').select('*').order('name', { ascending: true }),
         supabase.from('profiles').select('*').order('full_name', { ascending: true }),
         supabase.from('task_comments').select('id, task_id'),
+        supabase.from('projects').select('*').order('created_at', { ascending: true }),
       ]);
       if (tasksRes.error) throw tasksRes.error;
       if (clientsRes.error) throw clientsRes.error;
       if (membersRes.error) throw membersRes.error;
       if (commentsRes.error) throw commentsRes.error;
+      if (projectsRes.error) throw projectsRes.error;
 
       const clientList = (clientsRes.data || []) as Client[];
       const memberList = (membersRes.data || []) as Profile[];
+      const projectList = (projectsRes.data || []) as Project[];
       const clientMap = new Map(clientList.map((c) => [c.id, c.name]));
       const memberMap = new Map(memberList.map((m) => [m.id, m]));
+      const projectMap = new Map(projectList.map((p) => [p.id, p]));
 
       const commentCounts = new Map<string, number>();
       ((commentsRes.data || []) as { task_id: string | null }[]).forEach((c) => {
@@ -87,9 +121,12 @@ export function useWorkspace() {
 
       const enriched: TaskView[] = ((tasksRes.data || []) as Task[]).map((t) => {
         const m = t.assignee_id ? memberMap.get(t.assignee_id) : undefined;
+        const proj = t.project_id ? projectMap.get(t.project_id) : undefined;
         return {
           ...t,
           clientName: t.client_id ? clientMap.get(t.client_id) ?? null : null,
+          projectName: proj?.name ?? null,
+          projectColor: proj?.color ?? null,
           assigneeName: m?.full_name ?? null,
           assigneeColor: m?.avatar_color ?? null,
           commentCount: commentCounts.get(t.id) || 0,
@@ -100,6 +137,7 @@ export function useWorkspace() {
       setTasks(enriched);
       setClients(clientList);
       setMembers(memberList);
+      setProjects(buildProjectViews(projectList, enriched, clientMap));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load your workspace.');
     } finally {
@@ -127,6 +165,7 @@ export function useWorkspace() {
           title: input.title,
           description: input.description || null,
           client_id: input.client_id,
+          project_id: input.project_id,
           assignee_id: input.assignee_id,
           status: input.status,
           priority: input.priority,
@@ -211,6 +250,51 @@ export function useWorkspace() {
     [load],
   );
 
+  const createProject = useCallback(
+    async (input: ProjectInput) => {
+      const { data: userData } = await supabase.auth.getUser();
+      const { error: err } = await supabase.from('projects').insert({
+        name: input.name,
+        description: input.description || null,
+        client_id: input.client_id,
+        status: input.status,
+        color: input.color,
+        created_by: userData.user?.id ?? null,
+      });
+      if (err) throw err;
+      await load();
+    },
+    [load],
+  );
+
+  const updateProject = useCallback(
+    async (id: string, patch: ProjectInput) => {
+      const { error: err } = await supabase
+        .from('projects')
+        .update({
+          name: patch.name,
+          description: patch.description || null,
+          client_id: patch.client_id,
+          status: patch.status,
+          color: patch.color,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+      if (err) throw err;
+      await load();
+    },
+    [load],
+  );
+
+  const deleteProject = useCallback(
+    async (id: string) => {
+      const { error: err } = await supabase.from('projects').delete().eq('id', id);
+      if (err) throw err;
+      await load();
+    },
+    [load],
+  );
+
   const seedSampleTasks = useCallback(async () => {
     const today = new Date();
     const iso = (offset: number) => {
@@ -219,33 +303,72 @@ export function useWorkspace() {
       return d.toISOString().slice(0, 10);
     };
     const cId = (name: string) => clients.find((c) => c.name === name)?.id ?? null;
+    const pId = (name: string) => projects.find((p) => p.name.includes(name))?.id ?? null;
     const mId = (i: number) => members[i]?.id ?? null;
 
     const sample = [
-      { title: 'Draft Q4 campaign brief for Northwind Retail', client_id: cId('Northwind Retail'), assignee_id: mId(0), status: 'in_progress', priority: 'high', due_date: iso(2), description: 'Pull performance data from last quarter and outline the three campaign angles.' },
-      { title: 'Fix checkout bug reported by Bluepeak', client_id: cId('Bluepeak Commerce'), assignee_id: mId(1), status: 'todo', priority: 'urgent', due_date: iso(-1), description: 'Cart totals mismatch on the mobile flow. Client blocked on launch.' },
-      { title: 'Monthly analytics report — Meridian Group', client_id: cId('Meridian Group'), assignee_id: mId(0), status: 'review', priority: 'medium', due_date: iso(1), description: 'Compile the dashboard summary and send for internal review.' },
-      { title: 'Onboard Crestline Health to the portal', client_id: cId('Crestline Health'), assignee_id: mId(2), status: 'todo', priority: 'high', due_date: iso(4), description: 'Set up accounts, import their team list and schedule the kickoff call.' },
-      { title: 'Renew hosting contract for Solstice Media', client_id: cId('Solstice Media'), assignee_id: mId(1), status: 'todo', priority: 'medium', due_date: iso(9), description: 'Confirm renewal terms and update the billing contact.' },
-      { title: 'Content calendar for Northwind summer push', client_id: cId('Northwind Retail'), assignee_id: mId(2), status: 'in_progress', priority: 'medium', due_date: iso(6), description: 'Twelve posts scheduled with copy and visuals.' },
-      { title: 'SEO audit follow-ups — Meridian Group', client_id: cId('Meridian Group'), assignee_id: mId(0), status: 'done', priority: 'low', due_date: iso(-5), description: 'Implemented the top ten recommendations.' },
-      { title: 'Redesign landing page hero — Bluepeak', client_id: cId('Bluepeak Commerce'), assignee_id: mId(1), status: 'review', priority: 'high', due_date: iso(0), description: 'Final hero variations ready for client sign-off.' },
-      { title: 'Quarterly business review deck', client_id: null, assignee_id: mId(2), status: 'todo', priority: 'medium', due_date: iso(7), description: 'Internal QBR deck covering delivery, revenue and pipeline.' },
-      { title: 'Migrate Solstice Media assets to new CDN', client_id: cId('Solstice Media'), assignee_id: mId(0), status: 'done', priority: 'medium', due_date: iso(-3), description: 'All assets migrated and verified.' },
-      { title: 'Support retainer hours reconciliation', client_id: cId('Crestline Health'), assignee_id: mId(1), status: 'in_progress', priority: 'low', due_date: iso(5), description: 'Reconcile hours used against the monthly retainer.' },
-      { title: 'Prepare proposal for Halcyon Ventures', client_id: null, assignee_id: mId(0), status: 'todo', priority: 'high', due_date: iso(3), description: 'Scope, timeline and pricing for the new engagement.' },
+      { title: 'Draft Q4 campaign brief for Northwind Retail', client_id: cId('Northwind Retail'), project_id: pId('Northwind'), assignee_id: mId(0), status: 'in_progress', priority: 'high', due_date: iso(2), description: 'Pull performance data from last quarter and outline the three campaign angles.' },
+      { title: 'Fix checkout bug reported by Bluepeak', client_id: cId('Bluepeak Commerce'), project_id: pId('Bluepeak'), assignee_id: mId(1), status: 'todo', priority: 'urgent', due_date: iso(-1), description: 'Cart totals mismatch on the mobile flow. Client blocked on launch.' },
+      { title: 'Monthly analytics report — Meridian Group', client_id: cId('Meridian Group'), project_id: pId('Meridian'), assignee_id: mId(0), status: 'review', priority: 'medium', due_date: iso(1), description: 'Compile the dashboard summary and send for internal review.' },
+      { title: 'Onboard Crestline Health to the portal', client_id: cId('Crestline Health'), project_id: pId('Crestline'), assignee_id: mId(2), status: 'todo', priority: 'high', due_date: iso(4), description: 'Set up accounts, import their team list and schedule the kickoff call.' },
+      { title: 'Renew hosting contract for Solstice Media', client_id: cId('Solstice Media'), project_id: pId('Solstice'), assignee_id: mId(1), status: 'todo', priority: 'medium', due_date: iso(9), description: 'Confirm renewal terms and update the billing contact.' },
+      { title: 'Content calendar for Northwind summer push', client_id: cId('Northwind Retail'), project_id: pId('Northwind'), assignee_id: mId(2), status: 'in_progress', priority: 'medium', due_date: iso(6), description: 'Twelve posts scheduled with copy and visuals.' },
+      { title: 'SEO audit follow-ups — Meridian Group', client_id: cId('Meridian Group'), project_id: pId('Meridian'), assignee_id: mId(0), status: 'done', priority: 'low', due_date: iso(-5), description: 'Implemented the top ten recommendations.' },
+      { title: 'Redesign landing page hero — Bluepeak', client_id: cId('Bluepeak Commerce'), project_id: pId('Bluepeak'), assignee_id: mId(1), status: 'review', priority: 'high', due_date: iso(0), description: 'Final hero variations ready for client sign-off.' },
+      { title: 'Quarterly business review deck', client_id: null, project_id: null, assignee_id: mId(2), status: 'todo', priority: 'medium', due_date: iso(7), description: 'Internal QBR deck covering delivery, revenue and pipeline.' },
+      { title: 'Migrate Solstice Media assets to new CDN', client_id: cId('Solstice Media'), project_id: pId('Solstice'), assignee_id: mId(0), status: 'done', priority: 'medium', due_date: iso(-3), description: 'All assets migrated and verified.' },
+      { title: 'Support retainer hours reconciliation', client_id: cId('Crestline Health'), project_id: pId('Crestline'), assignee_id: mId(1), status: 'in_progress', priority: 'low', due_date: iso(5), description: 'Reconcile hours used against the monthly retainer.' },
+      { title: 'Prepare proposal for Halcyon Ventures', client_id: null, project_id: null, assignee_id: mId(0), status: 'todo', priority: 'high', due_date: iso(3), description: 'Scope, timeline and pricing for the new engagement.' },
     ];
 
     const rows = sample.map((s) => ({ ...s, source: 'internal' }));
     const { error: err } = await supabase.from('tasks').insert(rows);
     if (err) throw err;
     await load();
-  }, [clients, members, load]);
+  }, [clients, members, projects, load]);
+
+  const seedSampleProjects = useCallback(async () => {
+    const { data: userData } = await supabase.auth.getUser();
+    const actorId = userData.user?.id ?? null;
+    const cId = (name: string) => clients.find((c) => c.name === name)?.id ?? null;
+
+    const sample = [
+      { name: 'Northwind — Q4 Campaign', clientName: 'Northwind Retail', status: 'active', color: 'amber', description: 'Brief, creative and roll-out for the flagship Q4 retail push.' },
+      { name: 'Bluepeak — Checkout Revamp', clientName: 'Bluepeak Commerce', status: 'active', color: 'rose', description: 'Fix the mobile checkout flow and ship the new hero before launch.' },
+      { name: 'Meridian — Analytics Retainer', clientName: 'Meridian Group', status: 'active', color: 'emerald', description: 'Recurring reporting, SEO follow-ups and quarterly deep-dives.' },
+      { name: 'Crestline — Portal Onboarding', clientName: 'Crestline Health', status: 'active', color: 'slate', description: 'Stand up accounts, migrate their team and run enablement.' },
+      { name: 'Solstice — Site Migration', clientName: 'Solstice Media', status: 'completed', color: 'stone', description: 'Move assets to the new CDN and close out the hosting renewal.' },
+    ];
+
+    const rows = sample.map((s) => ({
+      name: s.name,
+      description: s.description,
+      client_id: cId(s.clientName),
+      status: s.status,
+      color: s.color,
+      created_by: actorId,
+    }));
+
+    const { data, error: err } = await supabase.from('projects').insert(rows).select('id, client_id');
+    if (err) throw err;
+
+    const inserted = (data || []) as { id: string; client_id: string | null }[];
+    // Link any existing, unassigned tasks to the project for the same client.
+    await Promise.all(
+      inserted.map((p) =>
+        p.client_id
+          ? supabase.from('tasks').update({ project_id: p.id }).eq('client_id', p.client_id).is('project_id', null)
+          : Promise.resolve(),
+      ),
+    );
+    await load();
+  }, [clients, load]);
 
   return {
     tasks,
     clients,
     members,
+    projects,
     loading,
     error,
     reload: load,
@@ -255,6 +378,10 @@ export function useWorkspace() {
     createClient,
     updateClient,
     deleteClient,
+    createProject,
+    updateProject,
+    deleteProject,
     seedSampleTasks,
+    seedSampleProjects,
   };
 }

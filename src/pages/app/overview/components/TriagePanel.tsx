@@ -1,14 +1,17 @@
 import { Link } from 'react-router-dom';
 import type { RequestBucket } from '@/lib/types';
-import { REQUEST_BUCKET_META, REQUEST_BUCKET_ORDER } from '@/lib/constants';
+import { REQUEST_BUCKET_META } from '@/lib/constants';
 
 interface Props {
   counts: Record<RequestBucket, number>;
 }
 
-/** Overview card: the four request buckets a manager cares about, at a glance. */
+/** The buckets a manager scans first; "going quiet" is surfaced separately below. */
+const CORE_BUCKETS: RequestBucket[] = ['waiting_for_us', 'waiting_for_client', 'unassigned', 'overdue'];
+
+/** Overview card: the request buckets a manager cares about, at a glance. */
 export default function TriagePanel({ counts }: Props) {
-  const total = counts.waiting_for_us + counts.waiting_for_client + counts.unassigned + counts.overdue;
+  const total = CORE_BUCKETS.reduce((sum, b) => sum + counts[b], 0) + counts.going_quiet;
 
   return (
     <section className="bg-[#1c2b3a] rounded-xl p-5 text-white">
@@ -20,8 +23,8 @@ export default function TriagePanel({ counts }: Props) {
       </div>
       <p className="text-[11px] text-white/50 mb-4">Who is owed the next move</p>
 
-      <div className="grid grid-cols-2 gap-2 mb-4">
-        {REQUEST_BUCKET_ORDER.map((bucket) => {
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        {CORE_BUCKETS.map((bucket) => {
           const meta = REQUEST_BUCKET_META[bucket];
           return (
             <div key={bucket} className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
@@ -34,6 +37,15 @@ export default function TriagePanel({ counts }: Props) {
           );
         })}
       </div>
+
+      {counts.going_quiet > 0 && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg bg-orange-500/15 border border-orange-400/30 px-3 py-2">
+          <i className="ri-timer-flash-line text-orange-300 text-sm shrink-0"></i>
+          <p className="text-[11px] text-orange-100 leading-snug">
+            <strong className="font-bold">{counts.going_quiet}</strong> going quiet — waiting on the client 7+ days
+          </p>
+        </div>
+      )}
 
       <p className="text-[11px] text-white/40 mb-4 leading-relaxed">
         {total === 0

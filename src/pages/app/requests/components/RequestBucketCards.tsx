@@ -10,7 +10,7 @@ interface Props {
 /** The manager's at-a-glance view: who owes what, and what's actually at risk. */
 export default function RequestBucketCards({ counts, active, onSelect }: Props) {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-5">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4 mb-5">
       {REQUEST_BUCKET_ORDER.map((bucket) => {
         const meta = REQUEST_BUCKET_META[bucket];
         const isActive = active === bucket;

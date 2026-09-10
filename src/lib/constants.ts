@@ -1,4 +1,4 @@
-import type { Priority, RequestBucket, RequestStatus, Role, TaskStatus } from './types';
+import type { Priority, ProjectStatus, RequestBucket, RequestStatus, Role, TaskSortKey, TaskStatus, WaitingAgeLevel } from './types';
 
 export const STATUS_ORDER: TaskStatus[] = ['todo', 'in_progress', 'waiting_on_client', 'review', 'done'];
 
@@ -138,6 +138,7 @@ export const REQUEST_STATUS_META: Record<
 export const REQUEST_BUCKET_ORDER: RequestBucket[] = [
   'waiting_for_us',
   'waiting_for_client',
+  'going_quiet',
   'unassigned',
   'overdue',
 ];
@@ -178,6 +179,45 @@ export const REQUEST_BUCKET_META: Record<
     bg: 'bg-red-50',
     ring: 'border-red-200',
   },
+  going_quiet: {
+    label: 'Going quiet',
+    description: 'Waiting on the client 7+ days',
+    icon: 'ri-timer-flash-line',
+    text: 'text-orange-600',
+    bg: 'bg-orange-50',
+    ring: 'border-orange-200',
+  },
+};
+
+/** Escalating emphasis for how long a request has been paused on the client. */
+export const WAITING_AGE_META: Record<
+  WaitingAgeLevel,
+  { label: string; chip: string; dot: string; icon: string; text: string; block: string }
+> = {
+  fresh: {
+    label: 'Recently paused',
+    chip: 'bg-stone-100 text-stone-600 border-stone-200',
+    dot: 'bg-stone-400',
+    icon: 'ri-hourglass-2-line',
+    text: 'text-stone-600',
+    block: 'bg-stone-50 border-stone-200',
+  },
+  aging: {
+    label: 'Ageing',
+    chip: 'bg-amber-100 text-amber-700 border-amber-200',
+    dot: 'bg-amber-500',
+    icon: 'ri-timer-line',
+    text: 'text-amber-700',
+    block: 'bg-amber-50 border-amber-200',
+  },
+  stale: {
+    label: 'Going quiet',
+    chip: 'bg-orange-100 text-orange-700 border-orange-200',
+    dot: 'bg-orange-500',
+    icon: 'ri-timer-flash-line',
+    text: 'text-orange-700',
+    block: 'bg-orange-50 border-orange-200',
+  },
 };
 
 export const ROLE_META: Record<Role, { label: string; chip: string }> = {
@@ -196,4 +236,63 @@ export const AVATAR_BG: Record<string, string> = {
   sky: 'bg-slate-500',
   violet: 'bg-stone-600',
   default: 'bg-slate-700',
+};
+
+export const PROJECT_STATUS_ORDER: ProjectStatus[] = ['active', 'paused', 'completed'];
+
+export const PROJECT_STATUS_META: Record<
+  ProjectStatus,
+  { label: string; chip: string; dot: string; icon: string }
+> = {
+  active: {
+    label: 'Active',
+    chip: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    dot: 'bg-emerald-500',
+    icon: 'ri-play-circle-line',
+  },
+  paused: {
+    label: 'Paused',
+    chip: 'bg-amber-100 text-amber-700 border-amber-200',
+    dot: 'bg-amber-500',
+    icon: 'ri-pause-circle-line',
+  },
+  completed: {
+    label: 'Completed',
+    chip: 'bg-[#1c2b3a] text-white border-[#1c2b3a]',
+    dot: 'bg-[#1c2b3a]',
+    icon: 'ri-checkbox-circle-line',
+  },
+};
+
+/** Solid accent bar colors for project cards (kept to the app's neutral/warm palette). */
+export const PROJECT_ACCENT_BG: Record<string, string> = {
+  slate: 'bg-slate-700',
+  amber: 'bg-amber-600',
+  rose: 'bg-rose-600',
+  emerald: 'bg-emerald-700',
+  stone: 'bg-stone-600',
+  default: 'bg-slate-700',
+};
+
+/** Soft tinted backgrounds paired with the accent colors above. */
+export const PROJECT_SOFT_BG: Record<string, string> = {
+  slate: 'bg-slate-100 text-slate-700',
+  amber: 'bg-amber-100 text-amber-700',
+  rose: 'bg-rose-100 text-rose-700',
+  emerald: 'bg-emerald-100 text-emerald-700',
+  stone: 'bg-stone-100 text-stone-700',
+  default: 'bg-slate-100 text-slate-700',
+};
+
+export const PROJECT_COLORS = ['slate', 'amber', 'rose', 'emerald', 'stone'];
+
+export const TASK_SORT_ORDER: TaskSortKey[] = ['due_date', 'priority', 'status', 'assignee', 'updated', 'client'];
+
+export const TASK_SORT_META: Record<TaskSortKey, { label: string; icon: string }> = {
+  due_date: { label: 'Due date', icon: 'ri-calendar-line' },
+  priority: { label: 'Priority', icon: 'ri-flag-line' },
+  status: { label: 'Status', icon: 'ri-progress-4-line' },
+  assignee: { label: 'Owner', icon: 'ri-user-line' },
+  updated: { label: 'Recently updated', icon: 'ri-history-line' },
+  client: { label: 'Client', icon: 'ri-briefcase-4-line' },
 };

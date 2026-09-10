@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useRequests, type AssignPayload } from '@/hooks/useRequests';
 import type { RequestBucket, RequestStatus, RequestView } from '@/lib/types';
 import { REQUEST_BUCKET_META, REQUEST_BUCKET_ORDER, REQUEST_STATUS_META, REQUEST_STATUS_ORDER } from '@/lib/constants';
-import { isRequestOverdue, requestMatchesBucket, startOfTodayMs } from '@/lib/workflow';
+import { isRequestOverdue, requestMatchesBucket, startOfTodayMs, waitingDays } from '@/lib/workflow';
 import RequestCard from './components/RequestCard';
 import RequestBucketCards from './components/RequestBucketCards';
 import AssignRequestModal from './components/AssignRequestModal';
@@ -55,7 +55,7 @@ export default function RequestsInboxPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const today = startOfTodayMs();
-    return requests.filter((r) => {
+    const list = requests.filter((r) => {
       if (tab !== 'all' && r.status !== tab) return false;
       if (bucket && !requestMatchesBucket(r, bucket, today)) return false;
       if (
@@ -67,6 +67,15 @@ export default function RequestsInboxPage() {
         return false;
       return true;
     });
+    // In the "going quiet" view, surface the longest-silent requests first.
+    if (bucket === 'going_quiet') {
+      list.sort(
+        (a, b) =>
+          waitingDays(b.waiting_since ?? b.updated_at ?? null) -
+          waitingDays(a.waiting_since ?? a.updated_at ?? null),
+      );
+    }
+    return list;
   }, [requests, tab, bucket, query]);
 
   const tabs: { key: Tab; label: string; count: number }[] = [
@@ -146,6 +155,30 @@ export default function RequestsInboxPage() {
             className="self-start sm:self-auto px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors cursor-pointer whitespace-nowrap"
           >
             Show overdue
+          </button>
+        </div>
+      )}
+
+      {bucketCounts.going_quiet > 0 && bucket !== 'going_quiet' && (
+        <div className="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 rounded-xl bg-orange-50 border border-orange-200">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+              <i className="ri-timer-flash-line text-orange-600"></i>
+            </div>
+            <p className="text-sm text-orange-700">
+              <strong>{bucketCounts.going_quiet}</strong> request{bucketCounts.going_quiet === 1 ? '' : 's'} going quiet
+              <span className="text-orange-500/80"> (waiting on the client 7+ days)</span>.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setBucket('going_quiet');
+              setTab('all');
+            }}
+            className="self-start sm:self-auto px-3 py-1.5 rounded-md bg-orange-600 text-white text-xs font-semibold hover:bg-orange-700 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            Show going quiet
           </button>
         </div>
       )}

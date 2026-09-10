@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { RequestStatus, RequestView } from '@/lib/types';
-import { PRIORITY_META, REQUEST_STATUS_META, REQUEST_STATUS_ORDER } from '@/lib/constants';
+import { PRIORITY_META, REQUEST_STATUS_META, REQUEST_STATUS_ORDER, WAITING_AGE_META } from '@/lib/constants';
 import { dueMeta } from '@/lib/format';
+import { waitingAgeLevel, waitingDays } from '@/lib/workflow';
 
 interface Props {
   request: RequestView;
@@ -88,6 +89,10 @@ export default function RequestCard({ request, onAssign, onStage, onDelete }: Pr
   const done = request.status === 'done';
   const action = primaryAction(request.status);
 
+  const waitingDaysCount = paused ? waitingDays(request.waiting_since ?? request.updated_at ?? null) : 0;
+  const ageMeta = WAITING_AGE_META[waitingAgeLevel(waitingDaysCount)];
+  const stale = paused && waitingAgeLevel(waitingDaysCount) === 'stale';
+
   const due = request.due_date ? dueMeta(request.due_date) : null;
   const dueTone = paused ? 'muted' : due?.tone ?? 'muted';
 
@@ -124,6 +129,15 @@ export default function RequestCard({ request, onAssign, onStage, onDelete }: Pr
               {priority.label}
             </span>
             <span className="text-[11px] text-slate-400">{due?.label ?? 'No due date'}</span>
+            {paused && (
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${ageMeta.chip}`}
+                title="How long this request has been waiting on the client"
+              >
+                <i className={ageMeta.icon}></i>
+                {waitingDaysCount === 0 ? 'Waiting today' : `Waiting ${waitingDaysCount}d`}
+              </span>
+            )}
           </div>
 
           <button type="button" onClick={() => setExpanded((v) => !v)} className="text-left cursor-pointer group">
@@ -159,6 +173,16 @@ export default function RequestCard({ request, onAssign, onStage, onDelete }: Pr
               <i className="ri-question-line text-rose-500 text-sm mt-0.5"></i>
               <p className="text-[11px] text-rose-700 leading-relaxed">
                 <span className="font-semibold">Waiting on:</span> {request.clarification_note}
+              </p>
+            </div>
+          )}
+
+          {stale && (
+            <div className="mt-2.5 flex items-start gap-2 px-3 py-2 rounded-md bg-orange-50 border border-orange-200">
+              <i className="ri-timer-flash-line text-orange-500 text-sm mt-0.5"></i>
+              <p className="text-[11px] text-orange-700 leading-relaxed">
+                <span className="font-semibold">Flagged — going quiet.</span> Waiting on the client for{' '}
+                {waitingDaysCount} days with no reply. Worth a follow-up.
               </p>
             </div>
           )}

@@ -99,6 +99,9 @@ export function useRequests() {
         updated_at: new Date().toISOString(),
         ...patch,
       };
+      // Stamp (or clear) the moment the request entered "waiting on client" so
+      // managers can see how long it has gone quiet.
+      update.waiting_since = status === 'waiting_on_client' ? new Date().toISOString() : null;
       const { error: err } = await supabase.from('requests').update(update).eq('id', request.id);
       if (err) throw err;
 
@@ -177,8 +180,17 @@ export function useRequests() {
       d.setDate(d.getDate() + offset);
       return d.toISOString().slice(0, 10);
     };
+    const isoDaysAgo = (offset: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() - offset);
+      return d.toISOString();
+    };
 
-    const sample: (PublicRequestInput & { status: RequestStatus; due_date: string | null })[] = [
+    const sample: (PublicRequestInput & {
+      status: RequestStatus;
+      due_date: string | null;
+      waiting_since?: string | null;
+    })[] = [
       {
         client_name: 'Northwind Retail',
         contact_email: 'maya.chen@northwind.com',
@@ -218,6 +230,7 @@ export function useRequests() {
         priority: 'medium',
         status: 'waiting_on_client',
         due_date: iso(-3),
+        waiting_since: isoDaysAgo(9),
       },
       {
         client_name: 'Solstice Media',

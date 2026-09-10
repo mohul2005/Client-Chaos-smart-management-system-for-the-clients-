@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import type { Client, Priority, Profile, TaskStatus, TaskView } from '@/lib/types';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import type { Client, Priority, Profile, ProjectView, TaskStatus, TaskView } from '@/lib/types';
 import { PRIORITY_META, PRIORITY_ORDER, STATUS_META, STATUS_ORDER } from '@/lib/constants';
 import type { TaskInput } from '@/hooks/useWorkspace';
 import TaskTrail from './TaskTrail';
@@ -10,6 +10,7 @@ interface Props {
   defaultStatus: TaskStatus;
   clients: Client[];
   members: Profile[];
+  projects: ProjectView[];
   onClose: () => void;
   onCreate: (input: TaskInput) => Promise<void>;
   onUpdate: (id: string, patch: Partial<TaskInput>) => Promise<void>;
@@ -20,6 +21,7 @@ const emptyForm: TaskInput = {
   title: '',
   description: '',
   client_id: null,
+  project_id: null,
   assignee_id: null,
   status: 'todo',
   priority: 'medium',
@@ -32,6 +34,7 @@ export default function TaskModal({
   defaultStatus,
   clients,
   members,
+  projects,
   onClose,
   onCreate,
   onUpdate,
@@ -53,6 +56,7 @@ export default function TaskModal({
         title: task.title,
         description: task.description || '',
         client_id: task.client_id,
+        project_id: task.project_id,
         assignee_id: task.assignee_id,
         status: task.status,
         priority: task.priority,
@@ -63,12 +67,25 @@ export default function TaskModal({
     }
   }, [open, task, defaultStatus]);
 
+  const availableProjects = useMemo(() => {
+    if (!form.client_id) return projects;
+    return projects.filter((p) => p.client_id === form.client_id || !p.client_id);
+  }, [projects, form.client_id]);
+
   if (!open) return null;
 
   const isEdit = Boolean(task);
 
   const set = <K extends keyof TaskInput>(key: K, value: TaskInput[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
+
+  const handleClientChange = (value: string | null) =>
+    setForm((prev) => {
+      const stillValid =
+        prev.project_id == null ||
+        projects.some((p) => p.id === prev.project_id && (p.client_id === value || !p.client_id));
+      return { ...prev, client_id: value, project_id: stillValid ? prev.project_id : null };
+    });
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -209,13 +226,32 @@ export default function TaskModal({
               <label className={labelClass}>Client</label>
               <select
                 value={form.client_id ?? ''}
-                onChange={(e) => set('client_id', e.target.value || null)}
+                onChange={(e) => handleClientChange(e.target.value || null)}
                 className={`${inputClass} cursor-pointer`}
               >
                 <option value="">Internal / no client</option>
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>Project</label>
+              <select
+                value={form.project_id ?? ''}
+                onChange={(e) => set('project_id', e.target.value || null)}
+                className={`${inputClass} cursor-pointer disabled:opacity-50`}
+                disabled={availableProjects.length === 0}
+              >
+                <option value="">
+                  {availableProjects.length === 0 ? 'No projects yet' : 'No project'}
+                </option>
+                {availableProjects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
                   </option>
                 ))}
               </select>

@@ -46,9 +46,47 @@ export function isRequestOverdue(
   return ms !== null && ms < todayMs;
 }
 
-/** Does a request belong in one of the manager's four buckets? (buckets overlap on purpose) */
+/** A client response older than this many days is "ageing" and worth watching. */
+export const CLIENT_AGING_DAYS = 3;
+/** A client response older than this many days is "going quiet" and gets flagged. */
+export const CLIENT_STALE_DAYS = 7;
+
+export type WaitingAgeLevel = 'fresh' | 'aging' | 'stale';
+
+/** The best-known moment a request entered "waiting on client" (falls back to last update). */
+export function requestWaitingSince(
+  r: Pick<RequestView, 'waiting_since' | 'updated_at'>,
+): string | null {
+  return r.waiting_since ?? r.updated_at ?? null;
+}
+
+/** Whole days a request has been sitting in "waiting on client". */
+export function waitingDays(since: string | null, nowMs = Date.now()): number {
+  if (!since) return 0;
+  const t = new Date(since).getTime();
+  if (Number.isNaN(t)) return 0;
+  return Math.max(0, Math.floor((nowMs - t) / 86400000));
+}
+
+/** How urgent a paused-on-client request looks, given how long it has been quiet. */
+export function waitingAgeLevel(days: number): WaitingAgeLevel {
+  if (days >= CLIENT_STALE_DAYS) return 'stale';
+  if (days >= CLIENT_AGING_DAYS) return 'aging';
+  return 'fresh';
+}
+
+/** True when a request has waited on the client long enough to be flagged. */
+export function isClientWaitingStale(
+  r: Pick<RequestView, 'status' | 'waiting_since' | 'updated_at'>,
+  nowMs = Date.now(),
+): boolean {
+  if (r.status !== 'waiting_on_client') return false;
+  return waitingAgeLevel(waitingDays(requestWaitingSince(r), nowMs)) === 'stale';
+}
+
+/** Does a request belong in one of the manager's buckets? (buckets overlap on purpose) */
 export function requestMatchesBucket(
-  r: Pick<RequestView, 'status' | 'due_date' | 'assignee_id'>,
+  r: Pick<RequestView, 'status' | 'due_date' | 'assignee_id' | 'waiting_since' | 'updated_at'>,
   bucket: RequestBucket,
   todayMs = startOfTodayMs(),
 ): boolean {
@@ -57,6 +95,8 @@ export function requestMatchesBucket(
       return isRequestOpen(r) && r.status !== 'waiting_on_client';
     case 'waiting_for_client':
       return r.status === 'waiting_on_client';
+    case 'going_quiet':
+      return isClientWaitingStale(r);
     case 'unassigned':
       return isRequestOpen(r) && !r.assignee_id;
     case 'overdue':

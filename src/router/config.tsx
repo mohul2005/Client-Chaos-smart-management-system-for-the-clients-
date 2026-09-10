@@ -9,6 +9,7 @@ import RequestIntakePage from "../pages/request/page";
 import AppLayout from "../pages/app/layout";
 import OverviewPage from "../pages/app/overview/page";
 import BoardPage from "../pages/app/board/page";
+import ProjectsPage from "../pages/app/projects/page";
 import RequestsInboxPage from "../pages/app/requests/page";
 import ClientsPage from "../pages/app/clients/page";
 import TeamPage from "../pages/app/team/page";
@@ -50,6 +51,7 @@ const routes: RouteObject[] = [
     children: [
       { index: true, element: <OverviewPage /> },
       { path: "board", element: <BoardPage /> },
+      { path: "projects", element: <ProjectsPage /> },
       { path: "requests", element: <RequestsInboxPage /> },
       { path: "clients", element: <ClientsPage /> },
       { path: "team", element: <TeamPage /> },

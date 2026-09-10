@@ -5,6 +5,9 @@ export type TaskStatus = 'todo' | 'in_progress' | 'waiting_on_client' | 'review'
 
 export type Priority = 'low' | 'medium' | 'high' | 'urgent';
 
+/** A project groups related tasks. A client can have many projects. */
+export type ProjectStatus = 'active' | 'paused' | 'completed';
+
 /**
  * The client-request lifecycle. A request travels this pipeline on its own,
  * and only becomes a board task once it reaches `in_progress`.
@@ -42,11 +45,35 @@ export interface Client {
   created_at: string;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  client_id: string | null;
+  status: ProjectStatus;
+  color: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A project enriched with its client and rolled-up task progress. */
+export interface ProjectView extends Project {
+  clientName: string | null;
+  totalTasks: number;
+  doneTasks: number;
+  openTasks: number;
+  overdueTasks: number;
+  /** 0–100 completion percentage. */
+  progress: number;
+}
+
 export interface Task {
   id: string;
   title: string;
   description: string | null;
   client_id: string | null;
+  project_id: string | null;
   assignee_id: string | null;
   status: TaskStatus;
   priority: Priority;
@@ -72,6 +99,8 @@ export interface RequestItem {
   client_id: string | null;
   task_id: string | null;
   clarification_note: string | null;
+  /** When the request last entered "waiting on client" (null while it isn't paused). */
+  waiting_since: string | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -104,6 +133,8 @@ export type TrailEntry =
 /** A task enriched with resolved client + assignee info for display. */
 export interface TaskView extends Task {
   clientName: string | null;
+  projectName: string | null;
+  projectColor: string | null;
   assigneeName: string | null;
   assigneeColor: string | null;
   commentCount: number;
@@ -116,5 +147,13 @@ export interface RequestView extends RequestItem {
   assigneeColor: string | null;
 }
 
+/** How the task list can be ordered. */
+export type TaskSortKey = 'due_date' | 'priority' | 'status' | 'assignee' | 'updated' | 'client';
+
 /** The four cross-cutting filters managers care about on the request inbox. */
-export type RequestBucket = 'waiting_for_us' | 'waiting_for_client' | 'unassigned' | 'overdue';
+export type RequestBucket =
+  | 'waiting_for_us'
+  | 'waiting_for_client'
+  | 'going_quiet'
+  | 'unassigned'
+  | 'overdue';

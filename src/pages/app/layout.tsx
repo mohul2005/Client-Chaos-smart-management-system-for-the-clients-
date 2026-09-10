@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
+import { AVATAR_BG } from '@/lib/constants';
+import { initials } from '@/lib/format';
 import { runReminderSweep } from '@/lib/notifications';
 import AppSidebar from './components/AppSidebar';
 
 const TITLES: Record<string, { title: string; subtitle: string }> = {
   '/app': { title: 'Overview', subtitle: 'A live pulse on workload, progress and risk.' },
   '/app/board': { title: 'Task Board', subtitle: 'Every client task, tracked from request to done.' },
+  '/app/projects': { title: 'Projects', subtitle: 'Group related work and track progress against each engagement.' },
   '/app/requests': { title: 'Request Inbox', subtitle: 'Client requests moving through the pipeline — clarification to done.' },
   '/app/clients': { title: 'Clients', subtitle: 'The accounts your team is delivering for.' },
   '/app/team': { title: 'Team', subtitle: 'Who is on the ground and what they own.' },
@@ -15,6 +19,8 @@ const TITLES: Record<string, { title: string; subtitle: string }> = {
 export default function AppLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
+  const { profile } = useAuth();
+  const avatarBg = AVATAR_BG[profile?.avatar_color || 'default'] || AVATAR_BG.default;
 
   useEffect(() => {
     setMenuOpen(false);
@@ -49,9 +55,23 @@ export default function AppLayout() {
             <p className="hidden sm:block text-xs text-slate-400 truncate">{meta.subtitle}</p>
           </div>
 
-          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
+          <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
             <span className="text-xs font-medium text-emerald-700">Workspace live</span>
+          </div>
+
+          <div className="flex items-center gap-3 pl-3 md:pl-4 border-l border-slate-200">
+            <div className="hidden sm:block text-right leading-tight min-w-0">
+              <p className="text-sm font-semibold text-slate-900 truncate max-w-[180px]">
+                {profile?.full_name || 'Teammate'}
+              </p>
+              <p className="text-[11px] text-slate-400 truncate max-w-[180px]">
+                {profile?.email || 'Signed in'}
+              </p>
+            </div>
+            <div className={`w-9 h-9 rounded-full ${avatarBg} flex items-center justify-center text-xs font-bold shrink-0`}>
+              {initials(profile?.full_name)}
+            </div>
           </div>
         </header>
 

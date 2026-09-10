@@ -20,6 +20,7 @@ export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
 
   const redirectTo = (location.state as { from?: string } | null)?.from || '/app/board';
@@ -31,8 +32,14 @@ export default function AuthPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!email.trim() || !password.trim()) {
+    setNotice('');
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password.trim()) {
       setError('Please enter your email and password.');
+      return;
+    }
+    if (mode === 'signup' && !fullName.trim()) {
+      setError('Please enter your name so we can set up your account.');
       return;
     }
     if (mode === 'signup' && password.length < 6) {
@@ -42,19 +49,52 @@ export default function AuthPage() {
     setBusy(true);
     try {
       if (mode === 'signup') {
-        const { error: signUpError } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: { data: { full_name: fullName.trim() || email.split('@')[0] } },
+        const trimmedName = fullName.trim();
+        // Accounts are created through our own backend, which marks the email as
+        // already confirmed. Supabase therefore never sends a confirmation email
+        // at all — no Gmail step and no email rate limit.
+        const { data: fnData, error: fnError } = await supabase.functions.invoke('create-account', {
+          body: { email: trimmedEmail, password, fullName: trimmedName },
         });
-        if (signUpError) throw signUpError;
-      } else {
+
+        let payload = (fnData || null) as { ok?: boolean; code?: string; message?: string } | null;
+        if (!payload && fnError) {
+          try {
+            const ctx = (fnError as { context?: Response }).context;
+            if (ctx && typeof ctx.json === 'function') payload = await ctx.json();
+          } catch {
+            /* fall through to the generic error below */
+          }
+        }
+
+        const created = payload?.ok === true;
+        const alreadyExists = payload?.code === 'already_exists';
+        if (!created && !alreadyExists) {
+          throw new Error(
+            payload?.message || fnError?.message || 'We could not create your account. Please try again.',
+          );
+        }
+
+        // Now sign in with the same email + password they just entered.
         const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
+          email: trimmedEmail,
           password,
         });
-        if (signInError) throw signInError;
+        if (signInError) {
+          setMode('signin');
+          setError(
+            'That email already has an account, but the password did not match. Sign in with your original password, or use a different email to create a new account.',
+          );
+          return;
+        }
+        navigate(redirectTo, { replace: true });
+        return;
       }
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      });
+      if (signInError) throw signInError;
       navigate(redirectTo, { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
@@ -118,6 +158,7 @@ export default function AuthPage() {
                 onClick={() => {
                   setMode(m);
                   setError('');
+                  setNotice('');
                 }}
                 className={`px-5 py-2 text-sm font-semibold rounded-full transition-colors cursor-pointer whitespace-nowrap ${
                   mode === m ? 'bg-[#1c2b3a] text-white' : 'text-slate-500 hover:text-slate-800'
@@ -133,8 +174,8 @@ export default function AuthPage() {
           </h2>
           <p className="text-sm text-slate-500 mb-7">
             {mode === 'signin'
-              ? 'Sign in to open your team board.'
-              : 'Create your account to start tracking client work.'}
+              ? 'Sign in with the same email and password you signed up with.'
+              : 'Set up your account with your name, email and password — you are signed in straight away, no email confirmation step.'}
           </p>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -191,6 +232,13 @@ export default function AuthPage() {
               </div>
             </div>
 
+            {notice && (
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-md bg-amber-50 border border-amber-200">
+                <i className="ri-information-line text-amber-500 text-base mt-0.5"></i>
+                <p className="text-xs text-amber-700 leading-relaxed">{notice}</p>
+              </div>
+            )}
+
             {error && (
               <div className="flex items-start gap-2 px-3 py-2.5 rounded-md bg-red-50 border border-red-200">
                 <i className="ri-error-warning-line text-red-500 text-base mt-0.5"></i>
@@ -215,6 +263,7 @@ export default function AuthPage() {
               onClick={() => {
                 setMode(mode === 'signin' ? 'signup' : 'signin');
                 setError('');
+                setNotice('');
               }}
               className="text-[#1c2b3a] font-semibold cursor-pointer"
             >

@@ -6,6 +6,7 @@ import { initials } from '@/lib/format';
 const navItems = [
   { label: 'Overview', path: '/app', icon: 'ri-dashboard-3-line', end: true },
   { label: 'Task Board', path: '/app/board', icon: 'ri-layout-column-line' },
+  { label: 'Projects', path: '/app/projects', icon: 'ri-folders-line' },
   { label: 'Requests', path: '/app/requests', icon: 'ri-inbox-archive-line' },
   { label: 'Clients', path: '/app/clients', icon: 'ri-briefcase-4-line' },
   { label: 'Team', path: '/app/team', icon: 'ri-team-line' },
@@ -98,7 +99,8 @@ export default function AppSidebar({ open, onClose }: Props) {
 
         {/* User */}
         <div className="p-3 border-t border-white/10 shrink-0">
-          <div className="flex items-center gap-3 px-2 py-2">
+          <p className="px-2 mb-2 text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Signed in as</p>
+          <div className="flex items-center gap-3 px-2 py-1">
             <div className={`w-9 h-9 rounded-full ${color} flex items-center justify-center text-xs font-bold shrink-0`}>
               {initials(profile?.full_name)}
             </div>
