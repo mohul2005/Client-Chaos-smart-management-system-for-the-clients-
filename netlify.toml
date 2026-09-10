@@ -1,0 +1,17 @@
+# Netlify configuration for this project
+# This file tells Netlify exactly how to build and serve the app.
+
+[build]
+  command = "npm run build"
+  publish = "out"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Single Page App routing:
+# Send every URL to index.html so refreshing on /login, /app/board, etc.
+# never throws a Netlify 404. React Router then renders the right page.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
